@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: myapp
+  namespace: demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: myapp }
+  template:
+    metadata:
+      labels: { app: myapp }
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "myapp"
+        vault.hashicorp.com/agent-inject-secret-config.env: "kv/data/myapp/config"
+        vault.hashicorp.com/agent-inject-template-config.env: |
+          {{- with secret "kv/data/myapp/config" -}}
+          DB_PASSWORD={{ .Data.data.db_password }}
+          API_KEY={{ .Data.data.api_key }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-tls.crt: "pki/issue/myapp-role"
+        vault.hashicorp.com/agent-inject-template-tls.crt: |
+          {{- with secret "pki/issue/myapp-role" "common_name=myapp.local" -}}
+          {{ .Data.certificate }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-tls.key: "pki/issue/myapp-role"
+        vault.hashicorp.com/agent-inject-template-tls.key: |
+          {{- with secret "pki/issue/myapp-role" "common_name=myapp.local" -}}
+          {{ .Data.private_key }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-ca.crt: "pki/cert/ca"
+        vault.hashicorp.com/agent-inject-template-ca.crt: |
+          {{- with secret "pki/cert/ca" -}}
+          {{ .Data.certificate }}
+          {{- end }}
+    spec:
+      serviceAccountName: myapp
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "tail -f /dev/null"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
